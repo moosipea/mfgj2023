@@ -74,6 +74,14 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             sway_gain: 32.0,
             sway_decay: 0.5,
         });
+
+    for i in 0..8 {
+        commands.spawn(SpriteBundle {
+            texture: asset_server.load("road.png"),
+            transform: SCALE_TRANSFORM.with_translation(Vec3::NEG_Y * 16.0 * SCALE * i as f32),
+            ..Default::default()
+        });
+    }
 }
 
 fn move_player(
