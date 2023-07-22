@@ -1,83 +1,144 @@
 use bevy::prelude::*;
 
-/*enum Stage {
-    Title,
-    Ingame,
-    Dead,
-}*/
+const SCALE: f32 = 3.0;
+const SCALE_TRANSFORM: Transform = Transform::from_scale(Vec3::new(SCALE, SCALE, SCALE));
+const KEYS_LEFT: [KeyCode; 2] = [KeyCode::A, KeyCode::Left];
+const KEYS_RIGHT: [KeyCode; 2] = [KeyCode::D, KeyCode::Right];
 
-const SCALE: Vec3 = Vec3::new(3.0, 3.0, 3.0);
-
-#[derive(Component)]
-struct Player {
-    speed: f32,
+enum GameStage {
+    Grass,
+    Snow,
+    Castle
 }
 
 #[derive(Component)]
-struct Projectile {
-    speed: f32
+struct Player;
+
+#[derive(Bundle)]
+struct PlayerBundle {
+    player: Player,
+    transform: Transform,
+}
+
+#[derive(Component)]
+struct PlayerMotorcycle;
+#[derive(Component, Default)]
+struct PlayerKnight {
+    sway: f32,
+    max_sway: f32,
+    sway_gain: f32,
+    sway_decay: f32,
 }
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_systems(Startup, setup)
-        .add_systems(Update, (player_movement, shoot, move_projectile))
+        .add_systems(
+            Update,
+            (
+                move_motorcycle,
+                update_knight_sway,
+                move_knight,
+                move_player,
+            ),
+        )
         .run();
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(Camera2dBundle::default());
 
+    commands.spawn(PlayerBundle {
+        player: Player,
+        transform: SCALE_TRANSFORM,
+    });
+
+    commands
+        .spawn(SpriteBundle {
+            texture: asset_server.load("motorcycle.png"),
+            transform: SCALE_TRANSFORM,
+            ..Default::default()
+        })
+        .insert(PlayerMotorcycle);
+
     commands
         .spawn(SpriteBundle {
             texture: asset_server.load("motorcycle_player.png"),
-            transform: Transform::from_scale(SCALE),
+            transform: SCALE_TRANSFORM,
             ..Default::default()
         })
-        .insert(Player { speed: 128.0 });
+        .insert(PlayerKnight {
+            sway: 0.0,
+            max_sway: 8.0,
+            sway_gain: 32.0,
+            sway_decay: 0.5,
+        });
 }
 
-fn shoot(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
+fn move_player(
+    mut player: Query<&mut Transform, With<Player>>,
     keys: Res<Input<KeyCode>>,
+    time: Res<Time>,
+) {
+    let mut player_transform = player.get_single_mut().expect("Couldn't find player");
+    let dir = player_transform.local_x();
+
+    if keys.any_pressed(KEYS_LEFT) {
+        player_transform.translation -= dir * 256.0 * time.delta_seconds();
+    }
+
+    if keys.any_pressed(KEYS_RIGHT) {
+        player_transform.translation += dir * 256.0 * time.delta_seconds();
+    }
+}
+
+fn move_motorcycle(
+    mut motorcycle: Query<&mut Transform, (With<PlayerMotorcycle>, Without<Player>)>,
+    player: Query<&Transform, (With<Player>, Without<PlayerMotorcycle>)>,
+) {
+    let player_transform = player.get_single().expect("Couldn't find player");
+    let mut motorcycle_transform = motorcycle
+        .get_single_mut()
+        .expect("Couldn't find motorcycle");
+    *motorcycle_transform = *player_transform;
+}
+
+fn move_knight(
+    mut knight: Query<(&mut Transform, &PlayerKnight), Without<Player>>,
     player: Query<&Transform, With<Player>>,
 ) {
-    let t = player.get_single().expect("Couldn't find player");
-    if keys.just_pressed(KeyCode::Space) {
-        commands.spawn(SpriteBundle {
-            texture: asset_server.load("knife.png"),
-            transform: Transform::from_translation(t.translation).with_scale(SCALE),
-            ..Default::default()
-        })
-        .insert(Projectile {
-            speed: 256.0
-        });
-    }
+    let player_transform = player.get_single().expect("Couldn't find player");
+    let (mut knight_transform, knight_state) =
+        knight.get_single_mut().expect("Couldn't find motorcycle");
+    let transform = player_transform.with_translation(
+        player_transform.translation
+            + player_transform.local_x() * knight_state.max_sway * knight_state.sway,
+    );
+    *knight_transform = transform;
 }
 
-fn move_projectile(
-    time: Res<Time>,
-    mut projectiles: Query<(&Projectile, &mut Transform)>
-) {
-    for (p, mut t) in &mut projectiles {
-        t.translation.y += p.speed * time.delta_seconds();
-    }
-}
-
-fn player_movement(
-    time: Res<Time>,
+fn update_knight_sway(
+    mut knight: Query<&mut PlayerKnight>,
     keys: Res<Input<KeyCode>>,
-    mut player: Query<(&Player, &mut Transform)>,
+    time: Res<Time>,
 ) {
-    let (player, mut transform) = player.get_single_mut().expect("Couldn't find player");
+    let mut knight_state = knight.get_single_mut().expect("Couldn't find motorcycle");
 
-    if keys.pressed(KeyCode::A) {
-        transform.translation.x -= player.speed * time.delta_seconds();
+    let left = keys.any_pressed(KEYS_LEFT);
+    let right = keys.any_pressed(KEYS_RIGHT);
+
+    if left {
+        knight_state.sway =
+            (knight_state.sway - knight_state.sway_gain * time.delta_seconds()).max(-1.0);
     }
 
-    if keys.pressed(KeyCode::D) {
-        transform.translation.x += player.speed * time.delta_seconds();
+    if right {
+        knight_state.sway =
+            (knight_state.sway + knight_state.sway_gain * time.delta_seconds()).min(1.0);
+    }
+
+    if !left && !right {
+        knight_state.sway *= knight_state.sway_decay;
     }
 }
