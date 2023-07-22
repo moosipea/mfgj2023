@@ -19,3 +19,6 @@ kind of like bullet hell games?
 * snake
 * dragon
 * ship
+
+### extra
+turning (tilting) animation
